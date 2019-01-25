@@ -102,7 +102,7 @@ class RegexHangmanSolver(DictionaryHangmanSolver):
         letters_to_guess = list(letters_in_candidates - self.guessed_letters)
         if not letters_to_guess:
             raise RuntimeError('no letters left to guess!')
-        return sorted(letters_to_guess, key=lambda c: self.letters_by_frequency.index(c))[0]
+        return sorted(letters_to_guess, key=self.letters_by_frequency.index)[0]
 
 
 def get_solver(strategy: GuessingStrategy) -> Type[HangmanSolver]:
