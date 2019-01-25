@@ -6,6 +6,7 @@ So far I have implemented the following strategies:
 
 * **random** (guess letters at random)
 * **frequency-based** (guess letters based on their frequency in the English language)
+* **regex-based** (guess letters based on frequency, using a dictionary and regex search to filter the candidate words)
 
 ## Usage
 
@@ -25,4 +26,8 @@ $ ./hangman.py bananas random
 
 ```
 $ ./hangman.py habaneros frequency
+```
+
+```
+$ ./hangman.py cheesecake regex
 ```

@@ -2,23 +2,29 @@
 
 import abc
 import random
+import re
 import sys
 
 from collections import deque
 from enum import Enum
-from typing import Iterable
+from typing import Iterable, Type
 
 
 class GuessingStrategy(Enum):
     FREQUENCY = 'frequency'
     RANDOM = 'random'
+    REGEX = 'regex'
+
+
+DEFAULT_STRATEGY = GuessingStrategy.REGEX
 
 
 class HangmanSolver(abc.ABC):
 
+    ALL_LETTERS = set('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
+    letters_by_frequency = deque('ETAOINSRHDLUCMFYWGPBVKXQJZ')
+
     def __init__(self, answer_length: int) -> None:
-        # with open('words.txt') as f:
-        #     self.words = set(word.upper().strip() for word in f.readlines() if word)
         self.solution = '_' * answer_length
         self.guessed_letters = set()
         self.last_guess = None
@@ -26,7 +32,7 @@ class HangmanSolver(abc.ABC):
 
     @abc.abstractmethod
     def _guess(self) -> str:
-        pass
+        raise NotImplemented
 
     def guess_letter(self) -> str:
         if self.last_guess is not None:
@@ -48,8 +54,6 @@ class HangmanSolver(abc.ABC):
 
 class RandomHangmanSolver(HangmanSolver):
 
-    ALL_LETTERS = set('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
-
     def _guess(self) -> str:
         choices = list(self.ALL_LETTERS - self.guessed_letters)
         if not choices:
@@ -59,30 +63,66 @@ class RandomHangmanSolver(HangmanSolver):
 
 class FrequencyHangmanSolver(HangmanSolver):
 
-    letters_by_frequency = deque('ETAOINSRHDLUCMFYWGPBVKXQJZ')
-
     def _guess(self) -> str:
         if not self.letters_by_frequency:
             raise RuntimeError('no letters left to guess!')
         return self.letters_by_frequency.popleft()
 
 
-def get_solver(strategy: GuessingStrategy, answer_length: int) -> HangmanSolver:
+class DictionaryHangmanSolver(HangmanSolver):
+
+    def __init__(self, answer_length: int) -> None:
+        super().__init__(answer_length)
+        with open('words.txt') as f:
+            self.words = set(word.upper().strip() for word in f.readlines() if word)
+
+    def _guess(self) -> str:
+        raise NotImplemented
+
+
+class RegexHangmanSolver(DictionaryHangmanSolver):
+
+    def _get_regex(self) -> re.Pattern:
+        possible_letters = self.ALL_LETTERS - self.guessed_letters
+        wildcard_regex = f'[{"".join(possible_letters)}]'
+        word_regex = '^' + ''.join(wildcard_regex if letter == '_' else letter for letter in self.solution) + '$'
+        return re.compile(word_regex)
+
+    def _guess(self) -> str:
+        regex = self._get_regex()
+        self.words = set(word for word in self.words if regex.match(word) is not None)
+        if not self.words:
+            raise RuntimeError('no words match!')
+        print('Evaluating', len(self.words), 'candidates')
+        if len(self.words) <= 20:
+            print('Candidates:', ', '.join(self.words))
+        letters_in_candidates = set(''.join(self.words))
+        letters_to_guess = list(letters_in_candidates - self.guessed_letters)
+        if not letters_to_guess:
+            raise RuntimeError('no letters left to guess!')
+        return sorted(letters_to_guess, key=lambda c: self.letters_by_frequency.index(c))[0]
+
+
+def get_solver(strategy: GuessingStrategy) -> Type[HangmanSolver]:
     if strategy == GuessingStrategy.FREQUENCY:
-        return FrequencyHangmanSolver(answer_length)
-    return RandomHangmanSolver(answer_length)
+        return FrequencyHangmanSolver
+    if strategy == GuessingStrategy.RANDOM:
+        return RandomHangmanSolver
+    return RegexHangmanSolver
 
 
 class Game:
 
-    def __init__(self, word: str, strategy: GuessingStrategy = GuessingStrategy.FREQUENCY) -> None:
+    def __init__(self, word: str, strategy: GuessingStrategy = DEFAULT_STRATEGY) -> None:
         self.answer = word.upper()
-        self.solver = get_solver(strategy, len(self.answer))
+        self.strategy = strategy
+        self.solver = get_solver(strategy)(len(self.answer))
 
     def play(self) -> None:
         print('The correct answer is:', self.answer)
-        print('Starting solver...')
+        print(f"Starting solver with the '{self.strategy.value}' strategy...")
         previous_solution = self.solver.solution
+        wrong_guesses = 0
         while not self.solver.solved:
             if self.solver.solution != previous_solution:
                 print('Working solution:', ' '.join(self.solver.solution))
@@ -90,10 +130,13 @@ class Game:
             guess = self.solver.guess_letter()
             print('Solver guessed:', guess)
             indices = [i for i in range(len(self.answer)) if self.answer[i] == guess]
+            if not indices:
+                wrong_guesses += 1
             self.solver.receive_feedback(indices)
         print('DONE!')
         print('Solver says:', self.solver.solution)
         print('Letters guessed:', len(self.solver.guessed_letters))
+        print('Wrong guesses:', wrong_guesses)
 
 
 def main() -> None:
@@ -104,11 +147,11 @@ def main() -> None:
     if argc == 3:
         strategy = GuessingStrategy[sys.argv[2].upper()]
     else:
-        strategy = GuessingStrategy.FREQUENCY
+        strategy = DEFAULT_STRATEGY
     if argc > 1:
-        word = sys.argv[1].upper()
+        word = sys.argv[1]
     else:
-        word = 'TEST'
+        word = 'test'
     Game(word, strategy).play()
 
 
