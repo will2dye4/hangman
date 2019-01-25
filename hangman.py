@@ -93,9 +93,11 @@ class RegexHangmanSolver(DictionaryHangmanSolver):
         self.words = set(word for word in self.words if regex.match(word) is not None)
         if not self.words:
             raise RuntimeError('no words match!')
-        print('Evaluating', len(self.words), 'candidates')
-        if len(self.words) <= 20:
-            print('Candidates:', ', '.join(self.words))
+        if len(self.words) > 1:
+            msg = f'Evaluating {len(self.words)} candidates'
+            if len(self.words) <= 20:
+                msg += f' ({", ".join(sorted(self.words))})'
+            print(msg)
         letters_in_candidates = set(''.join(self.words))
         letters_to_guess = list(letters_in_candidates - self.guessed_letters)
         if not letters_to_guess:
