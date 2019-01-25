@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.7
 
 import abc
 import random
@@ -113,32 +113,73 @@ def get_solver(strategy: GuessingStrategy) -> Type[HangmanSolver]:
     return RegexHangmanSolver
 
 
+class HangmanRenderer:
+
+    initial_state = [
+        '        +----+      ',
+        '        |           ',
+        '        |           ',
+        '        |           ',
+        '        |           ',
+        '    +---+---+       ',
+    ]
+
+    updates = [
+        ('O', 1, 13),
+        ('|', 2, 13),
+        ('/', 2, 12),
+        ('\\', 2, 14),
+        ('|', 3, 13),
+        ('/', 4, 12),
+        ('\\', 4, 14),
+    ]
+
+    @classmethod
+    def render(cls, solution: str, wrong_guesses: Iterable[str]) -> None:
+        wrong_guesses = sorted(wrong_guesses)
+        state = cls.initial_state.copy()
+        for i in range(min(len(wrong_guesses), len(cls.updates))):
+            letter, row, column = cls.updates[i]
+            row_str = state[row]
+            state[row] = row_str[:column] + letter + row_str[column+1:]
+        for row in state:
+            print(row)
+        print('Wrong guesses:', ' '.join(wrong_guesses))
+        print()
+        print(' '.join(solution))
+
+
 class Game:
+
+    max_wrong_guesses = len(HangmanRenderer.updates)
 
     def __init__(self, word: str, strategy: GuessingStrategy = DEFAULT_STRATEGY) -> None:
         self.answer = word.upper()
         self.strategy = strategy
         self.solver = get_solver(strategy)(len(self.answer))
+        self.wrong_guesses = set()
 
     def play(self) -> None:
         print('The correct answer is:', self.answer)
         print(f"Starting solver with the '{self.strategy.value}' strategy...")
-        previous_solution = self.solver.solution
-        wrong_guesses = 0
-        while not self.solver.solved:
-            if self.solver.solution != previous_solution:
-                print('Working solution:', ' '.join(self.solver.solution))
-                previous_solution = self.solver.solution
+        # previous_solution = self.solver.solution
+        while not self.solver.solved and len(self.wrong_guesses) < self.max_wrong_guesses:
+            # if self.solver.solution != previous_solution:
+            #     print('Working solution:', ' '.join(self.solver.solution))
+            #     previous_solution = self.solver.solution
             guess = self.solver.guess_letter()
-            print('Solver guessed:', guess)
+            # print('Solver guessed:', guess)
             indices = [i for i in range(len(self.answer)) if self.answer[i] == guess]
             if not indices:
-                wrong_guesses += 1
+                self.wrong_guesses.add(guess)
             self.solver.receive_feedback(indices)
-        print('DONE!')
-        print('Solver says:', self.solver.solution)
-        print('Letters guessed:', len(self.solver.guessed_letters))
-        print('Wrong guesses:', wrong_guesses)
+            HangmanRenderer.render(self.solver.solution, self.wrong_guesses)
+            print()
+        if self.solver.solved:
+            print('Solver says:', self.solver.solution)
+            print('Wrong guesses:', len(self.wrong_guesses))
+        else:
+            print('Solver lost!')
 
 
 def main() -> None:
