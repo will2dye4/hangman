@@ -91,20 +91,18 @@ class RegexHangmanSolver(DictionaryHangmanSolver):
 
     def __init__(self, answer_word_lengths: Iterable[int]) -> None:
         super().__init__(answer_word_lengths)
-        self.word_candidates = [self.words.copy() for _ in range(len(self.solution))]
+        self.word_candidates = [self.words.copy() for _ in self.solution]
 
-    def _get_regex(self, word: str = None) -> re.Pattern:
+    def _get_regex(self, word: str) -> re.Pattern:
         possible_letters = self.ALL_LETTERS - self.guessed_letters
         wildcard_regex = f'[{"".join(possible_letters)}]'
-        if word is None:
-            word = self.solution
         word_regex = '^' + ''.join(wildcard_regex if letter == '_' else letter for letter in word) + '$'
         return re.compile(word_regex)
 
     def _guess(self) -> str:
         for i, word in enumerate(self.solution):
             word_regex = self._get_regex(word)
-            self.word_candidates[i] = set(word for word in self.words if word_regex.match(word) is not None)
+            self.word_candidates[i] = set(word for word in self.word_candidates[i] if word_regex.match(word))
             if not self.word_candidates[i]:
                 raise RuntimeError(f'no words match! (word #{i + 1})')
         letters_in_candidates = set(''.join([''.join(words) for words in self.word_candidates]))
