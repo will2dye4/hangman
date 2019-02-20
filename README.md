@@ -8,26 +8,28 @@ So far I have implemented the following strategies:
 * **frequency-based** (guess letters based on their frequency in the English language)
 * **regex-based** (guess letters based on frequency, using a dictionary and regex search to filter the candidate words)
 
+By default, the regex strategy will be used.
+
 ## Usage
 
 ```
-$ ./hangman.py <word> [<strategy>]
+$ ./hangman.py [-s <strategy>] <phrase>
 ```
 
 Examples:
 
 ```
-$ ./hangman.py pizza
+$ ./hangman.py pepperoni calzone
 ```
 
 ```
-$ ./hangman.py bananas random
+$ ./hangman.py -s random bananas and strawberries
 ```
 
 ```
-$ ./hangman.py habaneros frequency
+$ ./hangman.py -s frequency spicy habaneros
 ```
 
 ```
-$ ./hangman.py cheesecake regex
+$ ./hangman.py -s regex chocolate cheesecake
 ```

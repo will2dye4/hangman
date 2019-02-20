@@ -1,13 +1,14 @@
 #!/usr/bin/env python3.7
 
 import abc
+import argparse
 import random
 import re
 import sys
 
 from collections import deque
 from enum import Enum
-from typing import Iterable, Type
+from typing import Iterable, List, Type
 
 
 class GuessingStrategy(Enum):
@@ -24,8 +25,8 @@ class HangmanSolver(abc.ABC):
     ALL_LETTERS = set('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
     letters_by_frequency = deque('ETAOINSRHDLUCMFYWGPBVKXQJZ')
 
-    def __init__(self, answer_length: int) -> None:
-        self.solution = '_' * answer_length
+    def __init__(self, answer_word_lengths: Iterable[int]) -> None:
+        self.solution = ['_' * word_length for word_length in answer_word_lengths]
         self.guessed_letters = set()
         self.last_guess = None
         self.solved = False
@@ -33,6 +34,10 @@ class HangmanSolver(abc.ABC):
     @abc.abstractmethod
     def _guess(self) -> str:
         raise NotImplemented
+
+    @property
+    def solution_str(self) -> str:
+        return ' '.join(self.solution)
 
     def guess_letter(self) -> str:
         if self.last_guess is not None:
@@ -42,13 +47,15 @@ class HangmanSolver(abc.ABC):
         self.guessed_letters.add(choice)
         return choice
 
-    def receive_feedback(self, matching_indices: Iterable[int]) -> None:
+    def receive_feedback(self, matching_word_indices: Iterable[Iterable[int]]) -> None:
         if self.last_guess is None:
             raise RuntimeError('must guess a letter before sending feedback!')
-        for index in matching_indices:
-            self.solution = self.solution[:index] + self.last_guess + self.solution[index+1:]
+        for word_index, matching_indices in enumerate(matching_word_indices):
+            for index in matching_indices:
+                word = self.solution[word_index]
+                self.solution[word_index] = word[:index] + self.last_guess + word[index+1:]
         self.last_guess = None
-        if '_' not in self.solution:
+        if '_' not in self.solution_str:
             self.solved = True
 
 
@@ -71,10 +78,10 @@ class FrequencyHangmanSolver(HangmanSolver):
 
 class DictionaryHangmanSolver(HangmanSolver):
 
-    def __init__(self, answer_length: int) -> None:
-        super().__init__(answer_length)
+    def __init__(self, answer_word_lengths: Iterable[int]) -> None:
+        super().__init__(answer_word_lengths)
         with open('words.txt') as f:
-            self.words = set(word.upper().strip() for word in f.readlines() if word)
+            self.words = set(word.upper().strip() for word in f.readlines())
 
     def _guess(self) -> str:
         raise NotImplemented
@@ -82,61 +89,22 @@ class DictionaryHangmanSolver(HangmanSolver):
 
 class RegexHangmanSolver(DictionaryHangmanSolver):
 
-    def _get_regex(self, word: str = None) -> re.Pattern:
+    def __init__(self, answer_word_lengths: Iterable[int]) -> None:
+        super().__init__(answer_word_lengths)
+        self.word_candidates = [self.words.copy() for _ in self.solution]
+
+    def _get_regex(self, word: str) -> re.Pattern:
         possible_letters = self.ALL_LETTERS - self.guessed_letters
         wildcard_regex = f'[{"".join(possible_letters)}]'
-        if word is None:
-            word = self.solution
         word_regex = '^' + ''.join(wildcard_regex if letter == '_' else letter for letter in word) + '$'
         return re.compile(word_regex)
 
     def _guess(self) -> str:
-        regex = self._get_regex()
-        self.words = set(word for word in self.words if regex.match(word) is not None)
-        if not self.words:
-            raise RuntimeError('no words match!')
-        if len(self.words) > 1:
-            msg = f'Evaluating {len(self.words)} candidates'
-            if len(self.words) <= 20:
-                msg += f' ({", ".join(sorted(self.words))})'
-            print(msg)
-        letters_in_candidates = set(''.join(self.words))
-        letters_to_guess = list(letters_in_candidates - self.guessed_letters)
-        if not letters_to_guess:
-            raise RuntimeError('no letters left to guess!')
-        return sorted(letters_to_guess, key=self.letters_by_frequency.index)[0]
-
-
-class MultiWordRegexHangmanSolver(RegexHangmanSolver):
-
-    def __init__(self, answer_word_lengths: Iterable[int]) -> None:
-        super().__init__(0)
-        self.solution = ['_' * word_length for word_length in answer_word_lengths]
-        self.word_candidates = [self.words.copy() for _ in range(len(self.solution))]
-
-    @property
-    def solution_str(self) -> str:
-        return ' '.join(self.solution)
-
-    def receive_feedback(self, matching_word_indices: Iterable[Iterable[int]]) -> None:
-        if self.last_guess is None:
-            raise RuntimeError('must guess a letter before sending feedback!')
-        for word_index, matching_indices in enumerate(matching_word_indices):
-            for index in matching_indices:
-                word = self.solution[word_index]
-                self.solution[word_index] = word[:index] + self.last_guess + word[index+1:]
-        self.last_guess = None
-        if '_' not in self.solution_str:
-            self.solved = True
-
-    def _guess(self) -> str:
         for i, word in enumerate(self.solution):
             word_regex = self._get_regex(word)
-            self.word_candidates[i] = set(word for word in self.words if word_regex.match(word) is not None)
+            self.word_candidates[i] = set(word for word in self.word_candidates[i] if word_regex.match(word))
             if not self.word_candidates[i]:
                 raise RuntimeError(f'no words match! (word #{i + 1})')
-        if all(len(candidates) == 1 for candidates in self.word_candidates):
-            print('solution must be:', ' '.join(list(candidates)[0] for candidates in self.word_candidates))
         letters_in_candidates = set(''.join([''.join(words) for words in self.word_candidates]))
         letters_to_guess = list(letters_in_candidates - self.guessed_letters)
         if not letters_to_guess:
@@ -174,7 +142,7 @@ class HangmanRenderer:
     ]
 
     @classmethod
-    def render(cls, solution: str, wrong_guesses: Iterable[str]) -> None:
+    def render(cls, solution: Iterable[str], wrong_guesses: Iterable[str]) -> None:
         wrong_guesses = sorted(wrong_guesses)
         state = cls.initial_state.copy()
         for i in range(min(len(wrong_guesses), len(cls.updates))):
@@ -185,49 +153,17 @@ class HangmanRenderer:
             print(row)
         print('Wrong guesses:', ' '.join(wrong_guesses))
         print()
-        print(' '.join(solution))
+        print(' '.join('|'.join(solution)))
 
 
 class Game:
 
     max_wrong_guesses = len(HangmanRenderer.updates)
 
-    def __init__(self, word: str, strategy: GuessingStrategy = DEFAULT_STRATEGY) -> None:
-        self.answer = word.upper()
+    def __init__(self, phrase: Iterable[str], strategy: GuessingStrategy = DEFAULT_STRATEGY) -> None:
+        self.answer = [word.upper() for word in phrase]
         self.strategy = strategy
-        self.solver = get_solver(strategy)(len(self.answer))
-        self.wrong_guesses = set()
-
-    def play(self) -> None:
-        print('The correct answer is:', self.answer)
-        print(f"Starting solver with the '{self.strategy.value}' strategy...")
-        # previous_solution = self.solver.solution
-        while not self.solver.solved and len(self.wrong_guesses) < self.max_wrong_guesses:
-            # if self.solver.solution != previous_solution:
-            #     print('Working solution:', ' '.join(self.solver.solution))
-            #     previous_solution = self.solver.solution
-            guess = self.solver.guess_letter()
-            # print('Solver guessed:', guess)
-            indices = [i for i in range(len(self.answer)) if self.answer[i] == guess]
-            if not indices:
-                self.wrong_guesses.add(guess)
-            self.solver.receive_feedback(indices)
-            HangmanRenderer.render(self.solver.solution, self.wrong_guesses)
-            print()
-        if self.solver.solved:
-            print('Solver says:', self.solver.solution)
-            print('Wrong guesses:', len(self.wrong_guesses))
-        else:
-            print('Solver lost!')
-
-
-class MultiWordGame:
-
-    max_wrong_guesses = len(HangmanRenderer.updates)
-
-    def __init__(self, words: Iterable[str]) -> None:
-        self.answer = [word.upper() for word in words]
-        self.solver = MultiWordRegexHangmanSolver(map(len, self.answer))
+        self.solver = get_solver(strategy)(map(len, self.answer))
         self.wrong_guesses = set()
 
     @property
@@ -236,19 +172,14 @@ class MultiWordGame:
 
     def play(self) -> None:
         print('The correct answer is:', self.answer_str)
-        print(f"Starting multi-word solver...")
-        # previous_solution = self.solver.solution
+        print(f"Starting solver with the '{self.strategy.value}' strategy...")
         while not self.solver.solved and len(self.wrong_guesses) < self.max_wrong_guesses:
-            # if self.solver.solution != previous_solution:
-            #     print('Working solution:', ' '.join(self.solver.solution))
-            #     previous_solution = self.solver.solution
             guess = self.solver.guess_letter()
-            # print('Solver guessed:', guess)
-            indices = [[i for i in range(len(word)) if word[i] == guess] for word in self.answer]
+            indices = [[i for i, char in enumerate(word) if char == guess] for word in self.answer]
             if not any(indices):
                 self.wrong_guesses.add(guess)
             self.solver.receive_feedback(indices)
-            HangmanRenderer.render('|'.join(self.solver.solution), self.wrong_guesses)
+            HangmanRenderer.render(self.solver.solution, self.wrong_guesses)
             print()
         if self.solver.solved:
             print('Solver says:', self.solver.solution_str)
@@ -257,22 +188,19 @@ class MultiWordGame:
             print('Solver lost!')
 
 
+def parse_args(args: List[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description='Solve hangman puzzles.')
+    parser.add_argument('phrase', nargs='+', help='The word or phrase for the solver to guess')
+    parser.add_argument('-s', '--strategy', choices=[s.value for s in GuessingStrategy], default='regex',
+                        help='The strategy to use to solve the puzzle')
+    return parser.parse_args(args)
+
+
 def main() -> None:
-    argc = len(sys.argv)
-    # if argc > 3:
-    #     print('Usage:', sys.argv[0], '<word> [<strategy>]')
-    #     sys.exit(1)
-    # if argc == 3:
-    #     strategy = GuessingStrategy[sys.argv[2].upper()]
-    # else:
-    #     strategy = DEFAULT_STRATEGY
-    # if argc > 1:
-    #     word = sys.argv[1]
-    # else:
-    #     word = 'test'
-    if argc < 2:
-        print('Usage:', sys.argv[0], '<word or phrase>')
-    MultiWordGame(sys.argv[1:]).play()
+    parsed_args = parse_args(sys.argv[1:])
+    strategy = GuessingStrategy[parsed_args.strategy.upper()]
+    phrase = parsed_args.phrase
+    Game(phrase, strategy).play()
 
 
 if __name__ == '__main__':
